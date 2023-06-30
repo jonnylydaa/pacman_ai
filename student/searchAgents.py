@@ -8,11 +8,14 @@ Good luck and happy searching!
 import logging
 
 from pacai.core.actions import Actions
-from pacai.core.search import heuristic
+from pacai.core import distance
+# from pacai.core.search import heuristic
+from pacai.core.directions import Directions
 from pacai.core.search.position import PositionSearchProblem
 from pacai.core.search.problem import SearchProblem
 from pacai.agents.base import BaseAgent
 from pacai.agents.search.base import SearchAgent
+from pacai.student import search
 
 class CornersProblem(SearchProblem):
     """
@@ -49,22 +52,65 @@ class CornersProblem(SearchProblem):
         return successors
     ```
     """
-
     def __init__(self, startingGameState):
         super().__init__()
-
         self.walls = startingGameState.getWalls()
         self.startingPosition = startingGameState.getPacmanPosition()
         top = self.walls.getHeight() - 2
         right = self.walls.getWidth() - 2
-
         self.corners = ((1, 1), (1, top), (right, 1), (right, top))
         for corner in self.corners:
             if not startingGameState.hasFood(*corner):
                 logging.warning('Warning: no food in corner ' + str(corner))
-
         # *** Your Code Here ***
-        raise NotImplementedError()
+        # raise NotImplementedError()
+        self.visited = []
+        self.gameStateStart = startingGameState
+        # access to startingGameState in cornersHeuristic
+
+    def startingState(self):
+        # Returns the start state (in your search space,
+        # NOT a `pacai.core.gamestate.AbstractGameState`).
+        return (self.startingPosition, self.visited)
+
+    def isGoal(self, searchState):
+        "Returns whether this search state is a goal state of the problem."
+        self._visitedLocations.add(searchState[0])   # taken from PositionSearchProblem
+        # Note: visit history requires coordinates not states. In this situation
+        # they are equivalent.
+        self._visitHistory.append(searchState[0])
+        if searchState[0] not in self.corners:
+            return False
+        return len(searchState[1]) == len(self.corners)
+
+    def successorStates(self, searchState):
+        successors = []
+        for action in Directions.CARDINAL:
+            x, y = searchState[0]
+            dx, dy = Actions.directionToVector(action)
+            nextx, nexty = int(x + dx), int(y + dy)
+            hitsWall = self.walls[nextx][nexty]
+            if (not hitsWall):
+                # Construct the successor.
+                nextNode = (nextx, nexty)
+                if nextNode in self.corners:
+                    newVisited = []
+                    for item in searchState[1]:
+                        newVisited.append(item)
+                    # print(newVisited)
+                    if nextNode not in searchState[1]:
+                        newVisited.append(nextNode)
+                        successors.append(((nextNode, newVisited), action, 1))
+                successors.append(((nextNode, searchState[1]), action, 1))
+                # 1 is the associated cost
+        self._numExpanded += 1
+        if (searchState[0] not in self._visitedLocations):
+            # taken from PositionSearchProblem successorStates
+            self._visitedLocations.add(searchState[0])
+            # visit history requires coordinates not states. In this situation
+            # they are equivalent.
+            self._visitHistory.append(searchState[0])
+        return successors
 
     def actionsCost(self, actions):
         """
@@ -99,8 +145,19 @@ def cornersHeuristic(state, problem):
     # corners = problem.corners  # These are the corner coordinates
     # walls = problem.walls  # These are the walls of the maze, as a Grid.
 
-    # *** Your Code Here ***
-    return heuristic.null(state, problem)  # Default to trivial solution
+    paths = []
+    bestDistance = 0
+    corners = problem.corners  # These are the corner coordinates
+    for corner in corners:
+        if corner not in state[1]:
+            paths.append(corner)
+    distances = []
+    if len(paths) != 0:
+        for path in paths:
+            # print("state and path: ", state[0], path)
+            distances.append(distance.maze(state[0], path, problem.gameStateStart))
+        bestDistance = max(distances)
+    return bestDistance
 
 def foodHeuristic(state, problem):
     """
@@ -132,9 +189,16 @@ def foodHeuristic(state, problem):
     """
 
     position, foodGrid = state
-
-    # *** Your Code Here ***
-    return heuristic.null(state, problem)  # Default to the null heuristic.
+    foodList = foodGrid.asList()
+    distances = []
+    bestDistance = 0
+    if len(foodList) != 0:
+        for x in range(0, foodGrid.getHeight()):
+            for y in range(0, foodGrid.getWidth()):  # area of food
+                if foodGrid[y][x] is True:
+                    distances.append(distance.maze((y, x), position, problem.startingGameState))
+        bestDistance = max(distances)
+    return bestDistance
 
 class ClosestDotSearchAgent(SearchAgent):
     """
@@ -173,10 +237,10 @@ class ClosestDotSearchAgent(SearchAgent):
         # startPosition = gameState.getPacmanPosition()
         # food = gameState.getFood()
         # walls = gameState.getWalls()
-        # problem = AnyFoodSearchProblem(gameState)
-
+        problem = AnyFoodSearchProblem(gameState)
+        return search.breadthFirstSearch(problem)
         # *** Your Code Here ***
-        raise NotImplementedError()
+        # raise NotImplementedError()
 
 class AnyFoodSearchProblem(PositionSearchProblem):
     """
@@ -204,6 +268,12 @@ class AnyFoodSearchProblem(PositionSearchProblem):
 
         # Store the food for later reference.
         self.food = gameState.getFood()
+        # print(self.food)
+
+    def isGoal(self, currentState):
+        if self.food[currentState[0]][currentState[1]]:
+            return True
+        return False
 
 class ApproximateSearchAgent(BaseAgent):
     """
@@ -221,3 +291,9 @@ class ApproximateSearchAgent(BaseAgent):
 
     def __init__(self, index, **kwargs):
         super().__init__(index, **kwargs)
+
+    def getAction(self, currentState):
+        pass
+
+    def registerInitialState(self, currentState):
+        pass
